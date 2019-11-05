@@ -1,0 +1,13 @@
+heat_template_version: 2015-10-15
+
+description: Servidor com Rede Interna
+
+resources:
+  instancia_analista:
+    type: OS::Nova::Server
+    properties:
+      image: cirros
+      flavor: m1.nano
+      key_name: chave-analista
+      networks:
+      - network: analista

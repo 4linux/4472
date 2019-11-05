@@ -1,0 +1,81 @@
+heat_template_version: 2015-10-15
+
+description: Servidor com Rede Interna + Rede Externa + Security Group + Volume + User Data
+
+resources:
+
+  dexter_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: dexter_security_group
+      rules:
+        - protocol: icmp
+        - protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+
+  instancia_port:
+    type: OS::Neutron::Port
+    properties:
+      network: analista
+      security_groups:
+        - { get_resource: dexter_security_group }
+
+  instancia_analista:
+    type: OS::Nova::Server
+    properties:
+      image: ubuntu-14.04
+      flavor: m2.nano
+      key_name: chave-analista
+      admin_user: ubuntu
+      networks:
+        - port: { get_resource: instancia_port }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: |
+            #cloud-config
+            write_files:
+              - content: |
+                  #!/bin/bash
+                  voldata_id="%voldata_id%"
+                  voldata_analista="/dev/disk/by-id/virtio-$(echo ${voldata_id} | cut -c -20)"
+                  sudo mkfs.ext4 ${voldata_analista}
+                  sudo mkdir /backup
+                  sudo echo "${voldata_analista} /backup ext4 defaults 0 2" >> /etc/fstab
+                  sudo mount -a
+                path: /tmp/format-disks
+                permissions: '0755'
+            runcmd:
+              - /tmp/format-disks
+          params:
+            "%voldata_id%": { get_resource: volume_analista }
+
+  volume_analista:
+    type: OS::Cinder::Volume
+    properties:
+      size: 2
+  volume_analista_data_attachment:
+    type: OS::Cinder::VolumeAttachment
+    properties:
+      instance_uuid: { get_resource: instancia_analista }
+      volume_id: { get_resource: volume_analista }
+
+  instancia_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: provider
+
+  instancia_floating_ip_assoc:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_resource: instancia_floating_ip }
+      port_id: { get_resource: instancia_port }
+
+outputs:
+  instancia_ip:
+    description: Endereco IP da instancia.
+    value: { get_attr: [instancia_analista, first_address]}
+  instancia_public_ip:
+    description: Endereco publico da instancia.
+    value: { get_attr: [ instancia_floating_ip, floating_ip_address ] }
